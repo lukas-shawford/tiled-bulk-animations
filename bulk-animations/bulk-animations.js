@@ -1,7 +1,7 @@
 class BulkAnimationEditor {
     constructor() {
         this.title = "Bulk Animation Editor";
-        this.version = "1.0";
+        this.version = "1.1";
 
         const createAnimations = tiled.registerAction('BulkAnimationEditor_CreateFromSelection',
             action => this.beginCreateAnimations());
@@ -26,11 +26,8 @@ class BulkAnimationEditor {
 
     createAnimations(config) {
         const tileset = tiled.activeAsset;
-        const { extent, direction, frames, duration } = config;
-        const stride = this.getStride(extent, direction);
-        for (const id of this.getTileIdsInExtent(extent)) {
-            const tile = tileset.tile(id);
-
+        const { selectedTiles, direction, stride, frames, duration } = config;
+        for (const tile of selectedTiles) {
             // HACK: Loop over all tiles to work around an issue with some tiles being occasionally null in the
             // tileset.tiles array. Not sure why the issue occurs - likely has something to do with the fact that
             // we're modifying the tiles while still iterating over them, or making too many modifications too
@@ -43,7 +40,7 @@ class BulkAnimationEditor {
                     + "again, and if the problem persists, please submit an issue.", this.title);
             }
 
-            tile.frames = this.getFrames(tile, stride, frames, duration);
+            tile.frames = this.getFrames(tile, direction, stride, frames, duration);
         }
     }
 
@@ -97,10 +94,13 @@ class BulkAnimationEditor {
 
         // Ensure a region is selected
         if (!tileset.selectedTiles || !tileset.selectedTiles.length) {
-            tiled.alert("No tiles are selected. Please select a region containing the first animation frame of the "
+            tiled.alert("No tiles are selected. Please select the tiles containing the first animation frame of the "
                 + "tiles you would like to animate.", this.title);
             return null;
         }
+
+        // Get the selected tiles, sorted in order of tile id
+        const selectedTiles = this.getSelectedTiles();
 
         // If any of the selected tiles have existing animations, prompt the user if they want to clear them
         const proceed = this.checkExistingAnimations();
@@ -120,8 +120,14 @@ class BulkAnimationEditor {
             return;
         }
 
+        // Prompt the stride (number of tiles between each consecutive animation frame)
+        const stride = this.promptStride(direction);
+        if (stride === null) {
+            return;
+        }
+
         // Prompt max number of frames to use for each animation
-        const frames = this.promptFrames(extent, direction);
+        const frames = this.promptFrames(extent, stride, direction);
         if (frames === null) {
             return;
         }
@@ -134,8 +140,10 @@ class BulkAnimationEditor {
 
         // Return config
         return {
+            selectedTiles,
             extent,
             direction,
+            stride,
             frames,
             duration
         };
@@ -169,8 +177,57 @@ class BulkAnimationEditor {
         }
     }
 
-    promptFrames(extent, direction) {
-        const maxFrames = this.getMaxFrames(extent, direction);
+    promptStride(direction) {
+        const defaultStride = this.getDefaultStride(direction);
+        const maxStride = this.getMaxStride(direction);
+        while (true) {
+            const input = tiled.prompt("Enter the stride. This represents the number of tiles to advance between each animation "
+                + "frame (in the direction specified in the previous step).\n"
+                + "The value defaulted below is a best guess based on the selection, but may require adjustment depending on how "
+                + "the tileset is laid out.", defaultStride, this.title);
+            if (!input) return null;
+            const stride = +input;
+            if (isNaN(stride)) {
+                tiled.alert("Invalid stride. Try again or press Cancel to abort.", this.title);
+                continue;
+            }
+            if (stride <= 0) {
+                tiled.alert("Stride should be greater than zero.", this.title);
+                continue;
+            }
+            if (stride > maxStride) {
+                tiled.alert("Invalid stride. Based on the size of the tileset and the specified direction, the maximum stride is: "
+                    + maxStride + ".\n\nPlease try again, or press Cancel to abort.", this.title);
+                continue;
+            }
+            return stride;
+        }
+    }
+
+    getDefaultStride(direction) {
+        if (!this.isSelectionRectangular()) {
+            return 1;
+        }
+        const extent = this.getSelectionExtent();
+        return direction === 'r' ? extent.width : extent.height;
+    }
+
+    getMaxStride(direction) {
+        const tileset = tiled.activeAsset;
+        const extent = this.getSelectionExtent();
+        if (direction === 'r') {
+            const numCols = this.getNumCols();
+            const extentR = extent.x + extent.width;
+            return numCols - extentR;
+        } else {
+            const numRows = this.getNumRows();
+            const extentB = extent.y + extent.height;
+            return numRows - extentB;
+        }
+    }
+
+    promptFrames(extent, stride, direction) {
+        const maxFrames = this.getMaxFrames(extent, stride, direction);
         while (true) {
             const input = tiled.prompt("Enter the number of frames in each animation. Enter 0 if the animation continues\n"
                 + "for the remainder of the tileset.", "0", this.title);
@@ -189,16 +246,16 @@ class BulkAnimationEditor {
         }
     }
 
-    getMaxFrames(extent, direction) {
+    getMaxFrames(extent, stride, direction) {
         const tileset = tiled.activeAsset;
         if (direction === 'r') {
-            const tilesX = tileset.imageWidth / tileset.tileWidth;
+            const numCols = this.getNumCols();
             const extentR = extent.x + extent.width;
-            return 1 + Math.floor((tilesX - extentR) / extent.width);
+            return 1 + Math.floor((numCols - extentR) / stride);
         } else {
-            const tilesY = tileset.imageHeight / tileset.tileHeight;
+            const numRows = this.getNumRows();
             const extentB = extent.y + extent.height;
-            return 1 + Math.floor((tilesY - extentB) / extent.height);
+            return 1 + Math.floor((numRows - extentB) / stride);
         }
     }
 
@@ -215,16 +272,42 @@ class BulkAnimationEditor {
         }
     }
 
+    getNumRows() {
+        const tileset = tiled.activeAsset;
+        const H = tileset.imageHeight;
+        const h = tileset.tileHeight;
+        const p = tileset.tileSpacing;
+        const m = tileset.margin;
+        return Math.floor((H + p - 2*m) / (h + p));
+    }
+
+    getNumCols() {
+        const tileset = tiled.activeAsset;
+        const W = tileset.imageWidth;
+        const w = tileset.tileWidth;
+        const p = tileset.tileSpacing;
+        const m = tileset.margin;
+        return Math.floor((W + p - 2*m) / (w + p));
+    }
+
     getTileCoord(tile) {
         const tileset = tiled.activeAsset;
-        const tilesX = tileset.imageWidth / tileset.tileWidth;
+        const numCols = this.getNumCols();
         const index = tileset.tiles.indexOf(tile);
         if (index < 0) {
             throw new Error("Tile not found in tileset: " + tile);
         }
-        const x = index % tilesX;
-        const y = Math.floor(index / tilesX);
+        const x = index % numCols;
+        const y = Math.floor(index / numCols);
         return Qt.point(x, y);
+    }
+
+    getSelectedTiles() {
+        const tileset = tiled.activeAsset;
+        if (!tileset.selectedTiles) {
+            return [];
+        }
+        return tileset.selectedTiles.sort((a, b) => a.id - b.id);
     }
 
     getSelectionExtent() {
@@ -232,44 +315,63 @@ class BulkAnimationEditor {
         if (!tileset.selectedTiles || !tileset.selectedTiles.length) {
             return null;
         }
-        const topLeft = tileset.selectedTiles[0];
-        const topLeftCoord = this.getTileCoord(topLeft);
-        const bottomRight = tileset.selectedTiles[tileset.selectedTiles.length - 1];
-        const bottomRightCoord = this.getTileCoord(bottomRight);
-        const selectionWidth = bottomRightCoord.x - topLeftCoord.x + 1;
-        const selectionHeight = bottomRightCoord.y - topLeftCoord.y + 1;
-        return Qt.rect(topLeftCoord.x, topLeftCoord.y, selectionWidth, selectionHeight);
-    }
-
-    getStride(extent, direction) {
-        if (direction === 'r') {
-            return extent.width;
-        } else {
-            const tileset = tiled.activeAsset;
-            const tilesX = tileset.imageWidth / tileset.tileWidth;
-            return tilesX * extent.height;
-        }
-    }
-
-    *getTileIdsInExtent(extent) {
-        const tileset = tiled.activeAsset;
-        const width = tileset.imageWidth / tileset.tileWidth;
-        for (let x = extent.x; x < extent.x + extent.width; x++) {
-            for (let y = extent.y; y < extent.y + extent.height; y++) {
-                const index = (y * width) + x;
-                yield index;
+        const selectedTiles = this.getSelectedTiles();
+        let top = null;
+        let right = null;
+        let bottom = null;
+        let left = null;
+        for (const tile of selectedTiles) {
+            const coord = this.getTileCoord(tile);
+            if (top === null || coord.y < top) {
+                top = coord.y;
+            }
+            if (right === null || coord.x > right) {
+                right = coord.x;
+            }
+            if (bottom === null || coord.y > bottom) {
+                bottom = coord.y;
+            }
+            if (left === null || coord.x < left) {
+                left = coord.x;
             }
         }
+        const width = right - left + 1;
+        const height = bottom - top + 1;
+        return Qt.rect(left, top, width, height);
+    }
+
+    isSelectionRectangular() {
+        const extent = this.getSelectionExtent();
+        if (!extent) {
+            return null;
+        }
+        const tileset = tiled.activeAsset;
+        const selectedTiles = tileset.selectedTiles.sort((a, b) => a.id - b.id);
+        const numCols = this.getNumCols();
+        for (let r = extent.y, i = 0; r < extent.y + extent.height; r++) {
+            for (let c = extent.x; c < extent.x + extent.width; c++, i++) {
+                if (i >= selectedTiles.length) {
+                    return false;
+                }
+                const id = r * numCols + c;
+                const tile = selectedTiles[i];
+                if (tile.id !== id) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     createAnimation(tile, config) {
         const { extent, direction, frames, duration } = config;
     }
 
-    getFrames(tile, stride, maxFrames, duration) {
+    getFrames(tile, direction, stride, maxFrames, duration) {
         const frames = [];
         const tileset = tiled.activeAsset;
-        const width = tileset.imageWidth / tileset.tileWidth;
+        const numCols = this.getNumCols();
+        const idStride = direction === 'd' ? numCols * stride : stride;
         let tileIndex = tileset.tiles.indexOf(tile);
         if (tileIndex < 0) {
             throw new Error("Tile not found in tileset");
@@ -280,7 +382,7 @@ class BulkAnimationEditor {
                 tileId: frameTile.id,
                 duration
             });
-            tileIndex += stride;
+            tileIndex += idStride;
         }
         return frames;
     }
