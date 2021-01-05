@@ -1,7 +1,7 @@
 class BulkAnimationEditor {
     constructor() {
         this.title = "Bulk Animation Editor";
-        this.version = "1.1";
+        this.version = "1.2";
 
         const createAnimations = tiled.registerAction('BulkAnimationEditor_CreateFromSelection',
             action => this.beginCreateAnimations());
@@ -26,7 +26,7 @@ class BulkAnimationEditor {
 
     createAnimations(config) {
         const tileset = tiled.activeAsset;
-        const { selectedTiles, direction, stride, frames, duration } = config;
+        const { selectedTiles, direction, stride, strideR, strideD, frames, duration } = config;
         for (const tile of selectedTiles) {
             // HACK: Loop over all tiles to work around an issue with some tiles being occasionally null in the
             // tileset.tiles array. Not sure why the issue occurs - likely has something to do with the fact that
@@ -40,7 +40,7 @@ class BulkAnimationEditor {
                     + "again, and if the problem persists, please submit an issue.", this.title);
             }
 
-            tile.frames = this.getFrames(tile, direction, stride, frames, duration);
+            tile.frames = this.getFrames(tile, direction, stride, strideR, strideD, frames, duration);
         }
     }
 
@@ -114,20 +114,38 @@ class BulkAnimationEditor {
             return;
         }
 
-        // Prompt which direction (right or down) the animation continues
+        // Prompt which direction (right, down or both) the animation continues
         const direction = this.promptDirection();
         if (direction === null) {
             return;
         }
 
-        // Prompt the stride (number of tiles between each consecutive animation frame)
-        const stride = this.promptStride(direction);
-        if (stride === null) {
-            return;
+        let strideR = "0", strideD = "0", stride = "0";
+        if (direction === 'b' && !this.isSelectionSquare()) {
+            // Prompt for both strides separately (number of tiles between each consecutive animation frame in both directions)
+            strideR = this.promptStride('r');
+            if (strideR === null) {
+                return;
+            }
+            stride = strideR;
+            strideD = this.promptStride('d');
+            if (strideD === null) {
+                return;
+            }
+        } else {
+            // Prompt the stride (number of tiles between each consecutive animation frame)
+            stride = this.promptStride(direction);
+            if (stride === null) {
+                return;
+            }
+            if (direction === 'b') {
+                strideR = stride;
+                strideD = stride;
+            }
         }
 
         // Prompt max number of frames to use for each animation
-        const frames = this.promptFrames(extent, stride, direction);
+        const frames = this.promptFrames(extent, stride, strideR, strideD, direction);
         if (frames === null) {
             return;
         }
@@ -144,6 +162,8 @@ class BulkAnimationEditor {
             extent,
             direction,
             stride,
+            strideR,
+            strideD,
             frames,
             duration
         };
@@ -165,11 +185,12 @@ class BulkAnimationEditor {
         while (true) {
             let defaultDirection = tileset.imageWidth >= tileset.imageHeight ? 'r' : 'd';
             let direction = tiled.prompt("Enter \"r\" if the remainder of the animation is located to the right of the "
-                + "selected region.\nEnter \"d\" if the remainder of the animation is located beneath the selected region.",
+                + "selected region.\nEnter \"d\" if the remainder of the animation is located beneath the selected region."
+                + "\nOr enter \"b\" if the remainder of the animation is both to the right and down (left to right, downwards).",
                 defaultDirection, this.title);
             if (!direction) return null;
             direction = direction.toLowerCase()[0];
-            if (direction === 'r' || direction === 'd') {
+            if (direction === 'r' || direction === 'd' || direction === 'b') {
                 return direction;
             }
             tiled.alert("Invalid selection. Please enter either \"r\" or \"d\" (without quotes), or press Cancel to "
@@ -209,13 +230,13 @@ class BulkAnimationEditor {
             return 1;
         }
         const extent = this.getSelectionExtent();
-        return direction === 'r' ? extent.width : extent.height;
+        return direction === 'd' ? extent.height : extent.width;
     }
 
     getMaxStride(direction) {
         const tileset = tiled.activeAsset;
         const extent = this.getSelectionExtent();
-        if (direction === 'r') {
+        if (direction === 'r' || direction === 'b') {
             const numCols = this.getNumCols();
             const extentR = extent.x + extent.width;
             return numCols - extentR;
@@ -226,8 +247,8 @@ class BulkAnimationEditor {
         }
     }
 
-    promptFrames(extent, stride, direction) {
-        const maxFrames = this.getMaxFrames(extent, stride, direction);
+    promptFrames(extent, stride, strideR, strideD, direction) {
+        const maxFrames = this.getMaxFrames(extent, stride, strideR, strideD, direction);
         while (true) {
             const input = tiled.prompt("Enter the number of frames in each animation. Enter 0 if the animation continues\n"
                 + "for the remainder of the tileset.", "0", this.title);
@@ -246,13 +267,21 @@ class BulkAnimationEditor {
         }
     }
 
-    getMaxFrames(extent, stride, direction) {
+    getMaxFrames(extent, stride, strideR, strideD, direction) {
         const tileset = tiled.activeAsset;
         if (direction === 'r') {
             const numCols = this.getNumCols();
             const extentR = extent.x + extent.width;
             return 1 + Math.floor((numCols - extentR) / stride);
-        } else {
+        }
+        if (direction === 'b') {
+            const numCols = this.getNumCols();
+            const extentR = extent.x + extent.width;
+            const numRows = this.getNumRows();
+            const extentB = extent.y + extent.height;
+            return (1 + Math.floor((numCols - extentR) / strideR))*(1 + Math.floor((numRows - extentB) / strideD));
+        }
+        if (direction === 'd') {
             const numRows = this.getNumRows();
             const extentB = extent.y + extent.height;
             return 1 + Math.floor((numRows - extentB) / stride);
@@ -363,15 +392,20 @@ class BulkAnimationEditor {
         return true;
     }
 
-    createAnimation(tile, config) {
-        const { extent, direction, frames, duration } = config;
+    isSelectionSquare() {
+        const extent = this.getSelectionExtent();
+        if (!extent) {
+            return null;
+        }
+        return (extent.width == extent.height);
     }
 
-    getFrames(tile, direction, stride, maxFrames, duration) {
+    getFrames(tile, direction, stride, strideR, strideD, maxFrames, duration) {
         const frames = [];
         const tileset = tiled.activeAsset;
         const numCols = this.getNumCols();
         const idStride = direction === 'd' ? numCols * stride : stride;
+        const extent = this.getSelectionExtent();
         let tileIndex = tileset.tiles.indexOf(tile);
         if (tileIndex < 0) {
             throw new Error("Tile not found in tileset");
@@ -382,7 +416,11 @@ class BulkAnimationEditor {
                 tileId: frameTile.id,
                 duration
             });
-            tileIndex += idStride;
+            if (direction === 'b' && frames.length % (1 + Math.floor((numCols - (extent.x + extent.width)) / strideR)) === 0) {
+                tileIndex += (numCols * strideD) - (numCols-strideR);
+            } else {
+                tileIndex += idStride;
+            }
         }
         return frames;
     }
