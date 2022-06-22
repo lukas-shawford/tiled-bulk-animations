@@ -313,7 +313,7 @@ class BulkAnimationEditor {
         input.minimum = 0;
         input.maximum = Math.floor(maxFrames);
         input.valueChanged.connect((newValue)=>{
-            this.config.frames = frames === 0 ? this.getMaxFrames() : input.value;
+            this.config.frames = input.value === 0 ? this.getMaxFrames() : input.value;
         });
     }
 
