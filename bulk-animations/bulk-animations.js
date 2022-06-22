@@ -3,6 +3,7 @@ class BulkAnimationEditor {
         this.title = "Bulk Animation Editor";
         this.version = "1.2";
 
+
         const createAnimations = tiled.registerAction('BulkAnimationEditor_CreateFromSelection',
             action => this.beginCreateAnimations());
         createAnimations.text = "Create Bulk Animations From Selection";
@@ -15,18 +16,27 @@ class BulkAnimationEditor {
     }
 
     beginCreateAnimations() {
-        const tileset = tiled.activeAsset;
-        const config = this.promptInputs();
-        if (!config) {
-            tiled.alert("Aborting operation.", this.title);
-            return;
-        }
-        this.execute(() => this.createAnimations(config), "Create Animations", config);
+        this.dialog = new Dialog(this.title);
+        this.dialog.minimumWidth =400;
+        this.dialog.finished.connect((code)=>{
+            this.dialog = undefined;
+        });
+        this.promptInputs(()=>{
+            if (!this.config) {
+                if(this.dialog){
+                    this.dialog.reject();
+                }
+                tiled.alert("Aborting operation.", this.title);
+                return;
+            }
+            this.execute(() => this.createAnimations(), "Create Animations", this.config);
+        });
+
     }
 
-    createAnimations(config) {
+    createAnimations() {
         const tileset = tiled.activeAsset;
-        const { selectedTiles, direction, stride, strideR, strideD, frames, duration } = config;
+        const { selectedTiles, direction, stride, strideR, strideD, frames, duration } = this.config;
         for (const tile of selectedTiles) {
             // HACK: Loop over all tiles to work around an issue with some tiles being occasionally null in the
             // tileset.tiles array. Not sure why the issue occurs - likely has something to do with the fact that
@@ -41,6 +51,9 @@ class BulkAnimationEditor {
             }
 
             tile.frames = this.getFrames(tile, direction, stride, strideR, strideD, frames, duration);
+        }
+        if (this.dialog){
+            this.dialog.accept();
         }
     }
 
@@ -67,7 +80,7 @@ class BulkAnimationEditor {
         if (!response) return;
 
         // Clear the animations
-        this.execute(() => this.clearAnimations(animatedTiles), "Create Animations", null);
+        this.execute(() => this.clearAnimations(animatedTiles), "Clear Animations", null);
     }
 
     clearAnimations(animatedTiles) {
@@ -85,13 +98,14 @@ class BulkAnimationEditor {
                 + "this extension with the error output from the console and (if possible) the tileset you are using.",
                 this.title);
             const errorOutput = this.formatError(e, name);
-            console.error(errorOutput);
+            tiled.log(errorOutput);
         }
     }
 
-    promptInputs() {
+    promptInputs(configCallback) {
         const tileset = tiled.activeAsset;
 
+        this.config = {};
         // Ensure a region is selected
         if (!tileset.selectedTiles || !tileset.selectedTiles.length) {
             tiled.alert("No tiles are selected. Please select the tiles containing the first animation frame of the "
@@ -100,7 +114,7 @@ class BulkAnimationEditor {
         }
 
         // Get the selected tiles, sorted in order of tile id
-        const selectedTiles = this.getSelectedTiles();
+        this.config.selectedTiles = this.getSelectedTiles();
 
         // If any of the selected tiles have existing animations, prompt the user if they want to clear them
         const proceed = this.checkExistingAnimations();
@@ -109,64 +123,57 @@ class BulkAnimationEditor {
         }
 
         // Get the selection extent
-        const extent = this.getSelectionExtent();
-        if (!extent) {
+        this.config.extent = this.getSelectionExtent();
+        if (!this.config.extent) {
             return;
         }
 
-        // Prompt which direction (right, down or both) the animation continues
-        const direction = this.promptDirection();
-        if (direction === null) {
-            return;
-        }
-
-        let strideR = "0", strideD = "0", stride = "0";
-        if (direction === 'b' && !this.isSelectionSquare()) {
-            // Prompt for both strides separately (number of tiles between each consecutive animation frame in both directions)
-            strideR = this.promptStride('r');
-            if (strideR === null) {
+        // Add dialog components for which direction (right, down or both) the animation continues
+        this.addDirectionInput();
+        this.addStrideInput();
+        // Add dialog components for max number of frames to use for each animation
+        this.addFramesInput();
+        // default duration (ms) for each animation frame
+        this.addDurationInput();
+        this.dialog.addSeparator();
+        var okButton = this.dialog.addButton('OK');
+        okButton.clicked.connect(()=>{
+            if (!this.validateConfig()){
                 return;
             }
-            stride = strideR;
-            strideD = this.promptStride('d');
-            if (strideD === null) {
-                return;
-            }
-        } else {
-            // Prompt the stride (number of tiles between each consecutive animation frame)
-            stride = this.promptStride(direction);
-            if (stride === null) {
-                return;
-            }
-            if (direction === 'b') {
-                strideR = stride;
-                strideD = stride;
-            }
+            configCallback();
+        });
+        var cancelButton = this.dialog.addButton('Cancel');
+        cancelButton.clicked.connect(()=>{
+            this.dialog.reject();
+        })
+        this.dialog.show();
+    }
+
+    validateConfig(){
+
+        const frames =  this.config.frames;
+        if (isNaN(frames) || frames < 0) {
+            tiled.alert(`Invalid number of frames '${this.config.frames}'. Try again or press Cancel to abort.`, this.title);
+            return false;
+        }
+        if (frames !== 0 && frames > this.config.maxFrames) {
+            tiled.alert(`Invalid number of frames. Based on the size of the tileset, the maximum number of frames is ${this.config.maxFrames}.`
+                +".\n\nPlease try again, or press Cancel to abort.", this.title);
+            return false;
         }
 
-        // Prompt max number of frames to use for each animation
-        const frames = this.promptFrames(extent, stride, strideR, strideD, direction);
-        if (frames === null) {
-            return;
+        const stride = this.config.direction == 'd'?  this.config.strideD: this.config.strideR;
+        if (stride <= 0) {
+            tiled.alert("Stride should be greater than zero.", this.title);
+            return false;
         }
-
-        // Prompt default duration (ms) for each animation frame
-        const duration = this.promptDuration();
-        if (duration === null) {
-            return;
+        if (this.config.stride > this.config.maxStride) {
+            tiled.alert("Invalid stride. Based on the size of the tileset and the specified direction, the maximum stride is: "
+                + this.config.maxStride + ".\n\nPlease try again, or press Cancel to abort.", this.title);
+            return false;
         }
-
-        // Return config
-        return {
-            selectedTiles,
-            extent,
-            direction,
-            stride,
-            strideR,
-            strideD,
-            frames,
-            duration
-        };
+        return true;
     }
 
     checkExistingAnimations() {
@@ -180,63 +187,112 @@ class BulkAnimationEditor {
         return true;
     }
 
-    promptDirection() {
+    addDirectionInput() {
         const tileset = tiled.activeAsset;
-        while (true) {
-            let defaultDirection = tileset.imageWidth >= tileset.imageHeight ? 'r' : 'd';
-            let direction = tiled.prompt("Enter \"r\" if the remainder of the animation is located to the right of the "
-                + "selected region.\nEnter \"d\" if the remainder of the animation is located beneath the selected region."
-                + "\nOr enter \"b\" if the remainder of the animation is both to the right and down (left to right, downwards).",
-                defaultDirection, this.title);
-            if (!direction) return null;
-            direction = direction.toLowerCase()[0];
-            if (direction === 'r' || direction === 'd' || direction === 'b') {
-                return direction;
+        let defaultDirection = tileset.imageWidth >= tileset.imageHeight ? "r" : "d";
+        const directionToHeading = {
+            "r": "The remainder of the animation is located to the right of the selected region.",
+            "d": 'The remainder of the animation is located beneath the selected region.',
+            "b": 'The remainder of the animation is both to the right and down (left to right, downwards).'
+        }
+        this.config.direction = defaultDirection;
+        this.dialog.addSeparator('Direction');
+        this.directionHeading = this.dialog.addHeading(`Current Direction: ${(this.config.direction == "r"? "Right": "Down")}\n${directionToHeading[this.config.direction]}`, true);
+        this.directionDropdown = this.dialog.addComboBox('', ['Right', 'Down', 'Both']);
+        this.directionDropdown.currentTextChanged.connect(function(newText){
+            switch (newText){
+                case 'Right':
+                    this.config.direction = "r";
+
+                    break;
+                case 'Down':
+                    this.config.direction = "d";
+                    break;
+                case 'Both':
+                    this.config.direction = "b";
+                default:
             }
-            tiled.alert("Invalid selection. Please enter either \"r\" or \"d\" (without quotes), or press Cancel to "
-                + "abort.", this.title);
+            this.directionHeading.text = `Current Direction: ${newText}\n${directionToHeading[this.config.direction]}`;
+            this.config.defaultStride = this.getDefaultStride();
+            this.config.maxStride = this.getMaxStride();
+            this.updateStrideInputsEnabled();
+        }.bind(this));
+    }
+    updateStrideInputsEnabled(){
+        if (this.config.direction == "r"){
+            this.downStrideInput.enabled = false;
+            this.downStrideInput.toolTip = 'Disabled since the current direction is Right';
+            this.rightStrideInput.enabled = true;
+            this.rightStrideInput.value = this.getDefaultStride();
+            this.downStrideInput.value = 1;
+            this.rightStrideInput.toolTip = this.rightStrideLabel.text;
+            this.config.strideR = this.rightStrideInput.value;
+        } else if (this.config.direction == "d"){
+            this.downStrideInput.enabled = true;
+            this.rightStrideInput.value = 1;
+            this.downStrideInput.value = this.getDefaultStride();
+            this.rightStrideInput.enabled = false;
+            this.rightStrideInput.toolTip = 'Disabled since the current direction is Down';
+            this.config.strideD = this.downStrideInput.value;
+            this.downStrideInput.toolTip = this.downStrideLabel.text;
+        } else {
+            if (this.rightStrideInput.value == 1){
+                this.rightStrideInput.value = this.getDefaultStride();
+            }
+            if (this.downStrideInput.value == 1){
+                this.downStrideInput.value = this.getDefaultStride();
+            }
+            this.downStrideInput.enabled = true;
+            this.rightStrideInput.enabled = true;
+            this.config.strideD = this.downStrideInput.value;
+            this.config.strideR = this.rightStrideInput.value;
+            this.rightStrideInput.toolTip = this.rightStrideLabel.text;
+            this.downStrideInput.toolTip = this.downStrideLabel.text;
         }
     }
+    addStrideInput() {
+        this.defaultStride = this.getDefaultStride();
+        this.config.maxStride = this.getMaxStride();
+        this.config.stride = this.defaultStride;
 
-    promptStride(direction) {
-        const defaultStride = this.getDefaultStride(direction);
-        const maxStride = this.getMaxStride(direction);
-        while (true) {
-            const input = tiled.prompt("Enter the stride. This represents the number of tiles to advance between each animation "
-                + "frame (in the direction specified in the previous step).\n"
-                + "The value defaulted below is a best guess based on the selection, but may require adjustment depending on how "
-                + "the tileset is laid out.", defaultStride, this.title);
-            if (!input) return null;
-            const stride = +input;
-            if (isNaN(stride)) {
-                tiled.alert("Invalid stride. Try again or press Cancel to abort.", this.title);
-                continue;
-            }
-            if (stride <= 0) {
-                tiled.alert("Stride should be greater than zero.", this.title);
-                continue;
-            }
-            if (stride > maxStride) {
-                tiled.alert("Invalid stride. Based on the size of the tileset and the specified direction, the maximum stride is: "
-                    + maxStride + ".\n\nPlease try again, or press Cancel to abort.", this.title);
-                continue;
-            }
-            return stride;
-        }
+        this.dialog.addHeading("Enter the stride. This represents the number of tiles to advance between each animation "
+            + "frame (in the direction specified in the previous step).\n"
+            + "The value defaulted below is a best guess based on the selection, but may require adjustment depending on how "
+            + "the tileset is laid out.", true);
+        this.rightStrideLabel = this.dialog.addLabel("Stride (Right)");
+        this.rightStrideInput = this.dialog.addNumberInput("", this.defaultStride);
+        this.rightStrideInput.minimum = 1;
+        this.rightStrideInput.decimals = 0;
+        this.rightStrideInput.maximum = this.config.maxStride;
+        this.rightStrideInput.valueChanged.connect((newValue)=>{
+            this.config.strideR = this.rightStrideInput.value;
+        });
+        this.config.strideR = this.rightStrideInput.value;
+        this.downStrideLabel = this.dialog.addLabel("Stride (Down)");
+        this.downStrideInput = this.dialog.addNumberInput("", this.defaultStride);
+        this.downStrideInput.minimum = 1;
+        this.downStrideInput.decimals = 0;
+        this.downStrideInput.maximum = this.config.maxStride;
+        this.downStrideInput.valueChanged.connect((newValue)=>{
+            this.config.strideD = this.downStrideInput.value;
+        });
+        this.config.strideD = this.downStrideInput.value;
+        this.updateStrideInputsEnabled();
     }
 
-    getDefaultStride(direction) {
+
+    getDefaultStride() {
         if (!this.isSelectionRectangular()) {
             return 1;
         }
         const extent = this.getSelectionExtent();
-        return direction === 'd' ? extent.height : extent.width;
+        return this.config.direction === 'd' ? extent.height : extent.width;
     }
 
-    getMaxStride(direction) {
+    getMaxStride() {
         const tileset = tiled.activeAsset;
         const extent = this.getSelectionExtent();
-        if (direction === 'r' || direction === 'b') {
+        if (this.config.direction === 'r' || this.config.direction === 'b') {
             const numCols = this.getNumCols();
             const extentR = extent.x + extent.width;
             return numCols - extentR;
@@ -247,58 +303,54 @@ class BulkAnimationEditor {
         }
     }
 
-    promptFrames(extent, stride, strideR, strideD, direction) {
-        const maxFrames = this.getMaxFrames(extent, stride, strideR, strideD, direction);
-        while (true) {
-            const input = tiled.prompt("Enter the number of frames in each animation. Enter 0 if the animation continues\n"
-                + "for the remainder of the tileset.", "0", this.title);
-            if (!input) return null;
-            const frames = +input;
-            if (isNaN(frames) || frames < 0) {
-                tiled.alert("Invalid number of frames. Try again or press Cancel to abort.", this.title);
-                continue;
-            }
-            if (frames !== 0 && frames > maxFrames) {
-                tiled.alert("Invalid number of frames. Based on the size of the tileset, the maximum number of frames is: "
-                    + maxFrames + ".\n\nPlease try again, or press Cancel to abort.", this.title);
-                continue;
-            }
-            return frames === 0 ? maxFrames : frames;
-        }
+    addFramesInput() {
+        const maxFrames = this.getMaxFrames();
+        this.dialog.addHeading("Enter the number of frames in each animation. Enter 0 if the animation continues "
+            + `for the remainder of the tileset`, true);
+        const input = this.dialog.addNumberInput("Frames", 0);
+        this.config.frames = maxFrames;
+        input.decimals = 0;
+        input.minimum = 0;
+        input.maximum = Math.floor(maxFrames);
+        input.valueChanged.connect((newValue)=>{
+            this.config.frames = frames === 0 ? this.getMaxFrames() : input.value;
+        });
     }
 
-    getMaxFrames(extent, stride, strideR, strideD, direction) {
-        const tileset = tiled.activeAsset;
+    getMaxFrames() {
+        const direction = this.config.direction;
+        const extent = this.config.extent;
         if (direction === 'r') {
             const numCols = this.getNumCols();
             const extentR = extent.x + extent.width;
-            return 1 + Math.floor((numCols - extentR) / stride);
+            return 1 + Math.floor((numCols - extentR) / this.config.strideR);
         }
-        if (direction === 'b') {
+        else if (direction === 'b') {
             const numCols = this.getNumCols();
             const extentR = extent.x + extent.width;
             const numRows = this.getNumRows();
             const extentB = extent.y + extent.height;
-            return (1 + Math.floor((numCols - extentR) / strideR))*(1 + Math.floor((numRows - extentB) / strideD));
+            return (1 + Math.floor((numCols - extentR) / this.config.strideR))*(1 + Math.floor((numRows - extentB) / this.config.strideD));
         }
         if (direction === 'd') {
             const numRows = this.getNumRows();
             const extentB = extent.y + extent.height;
-            return 1 + Math.floor((numRows - extentB) / stride);
+            return 1 + Math.floor((numRows - extentB) / this.config.strideD);
         }
     }
 
-    promptDuration() {
-        while (true) {
-            const input = tiled.prompt("Enter the default duration to use for each animation frame (in milliseconds):", "100", this.title);
-            if (!input) return null;
-            const duration = +input;
-            if (isNaN(duration) || duration <= 0) {
-                tiled.alert("Invalid duration. Please enter a value greater than 0, or press Cancel to abort.", this.title);
-                continue;
-            }
-            return duration;
-        }
+    addDurationInput() {
+        this.dialog.addHeading("Enter the default duration to use for each animation frame (in milliseconds)", true);
+        this.durationInput = this.dialog.addNumberInput('Duration: ', 100);
+        this.config.duration = 100;
+        this.durationInput.decimals = 0;
+        this.durationInput.minimum = 1;
+        this.durationInput.maximum = 99999;
+        this.durationInput.suffix = " ms";
+        this.durationInput.value = this.config.duration;
+        this.durationInput.valueChanged.connect((newValue)=>{
+            this.config.duration = this.durationInput.value;
+        })
     }
 
     getNumRows() {
@@ -366,7 +418,8 @@ class BulkAnimationEditor {
         }
         const width = right - left + 1;
         const height = bottom - top + 1;
-        return Qt.rect(left, top, width, height);
+        const extent =  Qt.rect(left, top, width, height);
+        return extent;
     }
 
     isSelectionRectangular() {
@@ -412,6 +465,7 @@ class BulkAnimationEditor {
         }
         for (let i = 0; i < maxFrames; i++) {
             const frameTile = tileset.tiles[tileIndex];
+            if(!frameTile) continue;
             frames.push({
                 tileId: frameTile.id,
                 duration
