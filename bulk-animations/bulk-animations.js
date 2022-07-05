@@ -307,7 +307,7 @@ class BulkAnimationEditor {
     addFramesInput() {
         const maxFrames = this.getMaxFrames();
         this.dialog.addHeading("Enter the number of frames in each animation. Enter 0 if the animation continues "
-            + `for the remainder of the tileset`, true);
+            + `for the remainder of the tileset.`, true);
         const input = this.dialog.addNumberInput("Frames", 0);
         this.config.frames = maxFrames;
         input.decimals = 0;
@@ -341,7 +341,7 @@ class BulkAnimationEditor {
     }
 
     addDurationInput() {
-        this.dialog.addHeading("Enter the default duration to use for each animation frame (in milliseconds)", true);
+        this.dialog.addHeading("Enter the default duration to use for each animation frame (in milliseconds).", true);
         this.durationInput = this.dialog.addNumberInput('Duration: ', 100);
         this.config.duration = 100;
         this.durationInput.decimals = 0;
