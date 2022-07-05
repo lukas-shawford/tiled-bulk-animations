@@ -199,6 +199,7 @@ class BulkAnimationEditor {
         this.dialog.addSeparator('Direction');
         this.directionHeading = this.dialog.addHeading(`Current Direction: ${(this.config.direction == "r"? "Right": "Down")}\n${directionToHeading[this.config.direction]}`, true);
         this.directionDropdown = this.dialog.addComboBox('', ['Right', 'Down', 'Both']);
+        this.directionDropdown.currentIndex = this.config.direction == "r" ? 0 : 1;
         this.directionDropdown.currentTextChanged.connect(function(newText){
             switch (newText){
                 case 'Right':
