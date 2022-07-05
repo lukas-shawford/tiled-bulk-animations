@@ -98,7 +98,7 @@ class BulkAnimationEditor {
                 + "this extension with the error output from the console and (if possible) the tileset you are using.",
                 this.title);
             const errorOutput = this.formatError(e, name);
-            tiled.log(errorOutput);
+            tiled.error(errorOutput);
         }
     }
 
