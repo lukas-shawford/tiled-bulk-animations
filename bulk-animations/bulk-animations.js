@@ -216,6 +216,9 @@ class BulkAnimationEditor {
             this.directionHeading.text = `Current Direction: ${newText}\n${directionToHeading[this.config.direction]}`;
             this.config.defaultStride = this.getDefaultStride();
             this.config.maxStride = this.getMaxStride();
+            if (this.framesInput.value === 0) {
+                this.config.frames = this.getMaxFrames()
+            }
             this.updateStrideInputsEnabled();
         }.bind(this));
     }
@@ -309,6 +312,7 @@ class BulkAnimationEditor {
         this.dialog.addHeading("Enter the number of frames in each animation. Enter 0 if the animation continues "
             + `for the remainder of the tileset.`, true);
         const input = this.dialog.addNumberInput("Frames", 0);
+        this.framesInput = input;
         this.config.frames = maxFrames;
         input.decimals = 0;
         input.minimum = 0;
