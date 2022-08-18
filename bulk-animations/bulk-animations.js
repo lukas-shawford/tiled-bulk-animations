@@ -216,10 +216,10 @@ class BulkAnimationEditor {
             this.directionHeading.text = `Current Direction: ${newText}\n${directionToHeading[this.config.direction]}`;
             this.config.defaultStride = this.getDefaultStride();
             this.config.maxStride = this.getMaxStride();
+            this.updateStrideInputsEnabled();
             if (this.framesInput.value === 0) {
                 this.config.frames = this.getMaxFrames()
             }
-            this.updateStrideInputsEnabled();
         }.bind(this));
     }
     updateStrideInputsEnabled(){
