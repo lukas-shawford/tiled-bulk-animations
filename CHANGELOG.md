@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3] - 2022-08-18
+
+### Changed
+- Use new dialog functionality introduced in Tiled 1.9.
+
+
+## [1.2] - 2021-01-21
+
+### Added
+- Support new direction mode "both" for animations that span both right and then down in the tileset image.
+
+
 ## [1.1] - 2020-08-25
 
 ### Added
