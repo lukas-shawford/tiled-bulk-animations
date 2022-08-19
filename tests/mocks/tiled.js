@@ -1,0 +1,4 @@
+global.tiled = {
+    registerAction: () => ({}),
+    extendMenu: () => {}
+}
