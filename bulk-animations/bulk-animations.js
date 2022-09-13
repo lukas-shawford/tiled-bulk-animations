@@ -1,7 +1,7 @@
 class BulkAnimationEditor {
     constructor() {
         this.title = "Bulk Animation Editor";
-        this.version = "1.3";
+        this.version = "1.3.2";
 
 
         const createAnimations = tiled.registerAction('BulkAnimationEditor_CreateFromSelection',

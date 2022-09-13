@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.2] - 2022-09-13
+
+### Changed
+- Fix max frames and update default stride when switching directions.
+
+## [1.3.1] - 2022-09-13
+
+### Changed
+- Fix some issues with stride and max frame calculations.
+
 ## [1.3] - 2022-08-18
 
 ### Changed
