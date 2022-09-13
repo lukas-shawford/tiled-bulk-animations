@@ -151,7 +151,9 @@ class BulkAnimationEditor {
     }
 
     validateConfig() {
-        const frames =  this.config.frames;
+        const { frames, direction, strideR, strideD } = this.config;
+        const rightEnabled = (direction === 'r' || direction === 'b');
+        const downEnabled = (direction === 'd' || direction === 'b');
         const maxFrames = this.getMaxFrames();
         if (isNaN(frames) || frames < 0) {
             tiled.alert(`Invalid number of frames '${this.config.frames}'. Try again or press Cancel to abort.`, this.title);
@@ -162,15 +164,24 @@ class BulkAnimationEditor {
                 +"\n\nPlease try again, or press Cancel to abort.", this.title);
             return false;
         }
-        const stride = this.config.direction === 'd' ?  this.config.strideD : this.config.strideR;
-        const maxStride = this.getMaxStride();
-        if (stride <= 0) {
-            tiled.alert("Stride should be greater than zero.", this.title);
+        const maxStrideR = this.getMaxStride('r');
+        const maxStrideD = this.getMaxStride('d');
+        if (rightEnabled && strideR <= 0) {
+            tiled.alert("Stride (Right) should be greater than zero.", this.title);
             return false;
         }
-        if (stride > maxStride) {
-            tiled.alert("Invalid stride. Based on the size of the tileset and the specified direction, the maximum stride is: "
-                + maxStride + ".\n\nPlease try again, or press Cancel to abort.", this.title);
+        if (downEnabled && strideD <= 0) {
+            tiled.alert("Stride (Down) should be greater than zero.", this.title);
+            return false;
+        }
+        if (rightEnabled && strideR > maxStrideR) {
+            tiled.alert("Stride (Right) is invalid. Based on the size of the tileset and the specified direction, the maximum stride is: "
+                + maxStrideR + ".\n\nPlease try again, or press Cancel to abort.", this.title);
+            return false;
+        }
+        if (downEnabled && strideD > maxStrideD) {
+            tiled.alert("Stride (Down) is invalid. Based on the size of the tileset and the specified direction, the maximum stride is: "
+                + maxStrideD + ".\n\nPlease try again, or press Cancel to abort.", this.title);
             return false;
         }
         return true;
@@ -214,96 +225,107 @@ class BulkAnimationEditor {
                 default:
             }
             this.directionHeading.text = `Current Direction: ${newText}\n${directionToHeading[this.config.direction]}`;
-            this.updateStrideInputsEnabled();
+            this.updateStrideInputs();
+
+            const maxFrames = this.getMaxFrames();
+            this.framesInput.maximum = maxFrames;
             if (this.framesInput.value === 0) {
-                this.config.frames = this.getMaxFrames()
+                this.config.frames = maxFrames;
             }
         }.bind(this));
     }
-    updateStrideInputsEnabled(){
-        if (this.config.direction == "r") {
-            this.downStrideInput.enabled = false;
-            this.downStrideInput.toolTip = 'Disabled since the current direction is Right';
-            this.downStrideInput.minimum = 0;
-            this.downStrideInput.value = 0;
 
-            this.rightStrideInput.enabled = true;
-            this.rightStrideInput.minimum = 1;
-            this.rightStrideInput.value = this.getDefaultStride();
-            this.rightStrideInput.toolTip = this.rightStrideLabel.text;
+    updateStrideInputs(){
+        switch (this.config.direction)  {
+            case 'r':
+                this.downStrideInput.enabled = false;
+                this.downStrideInput.toolTip = 'Disabled since the current direction is Right';
+                this.downStrideInput.minimum = 0;
+                this.downStrideInput.value = 0;
 
-            this.config.strideR = this.rightStrideInput.value;
-        } else if (this.config.direction == "d") {
-            this.rightStrideInput.enabled = false;
-            this.rightStrideInput.toolTip = 'Disabled since the current direction is Down';
-            this.rightStrideInput.minimum = 0;
-            this.rightStrideInput.value = 0;
+                this.rightStrideInput.enabled = true;
+                this.rightStrideInput.minimum = 1;
+                this.rightStrideInput.value = this.getDefaultStride('r');
+                this.rightStrideInput.toolTip = this.rightStrideLabel.text;
 
-            this.downStrideInput.enabled = true;
-            this.downStrideInput.minimum = 1;
-            this.downStrideInput.value = this.getDefaultStride();
-            this.downStrideInput.toolTip = this.downStrideLabel.text;
+                this.config.strideR = this.rightStrideInput.value;
+                break;
+            case 'd':
+                this.rightStrideInput.enabled = false;
+                this.rightStrideInput.toolTip = 'Disabled since the current direction is Down';
+                this.rightStrideInput.minimum = 0;
+                this.rightStrideInput.value = 0;
 
-            this.config.strideD = this.downStrideInput.value;
-        } else {
-            if (this.rightStrideInput.value == 1){
-                this.rightStrideInput.value = this.getDefaultStride();
-            }
-            if (this.downStrideInput.value == 1){
-                this.downStrideInput.value = this.getDefaultStride();
-            }
-            this.downStrideInput.enabled = true;
-            this.downStrideInput.minimum = 1;
-            this.rightStrideInput.enabled = true;
-            this.rightStrideInput.minimum = 1;
-            this.config.strideD = this.downStrideInput.value;
-            this.config.strideR = this.rightStrideInput.value;
-            this.rightStrideInput.toolTip = this.rightStrideLabel.text;
-            this.downStrideInput.toolTip = this.downStrideLabel.text;
+                this.downStrideInput.enabled = true;
+                this.downStrideInput.minimum = 1;
+                this.downStrideInput.value = this.getDefaultStride('d');
+                this.downStrideInput.toolTip = this.downStrideLabel.text;
+
+                this.config.strideD = this.downStrideInput.value;
+                break;
+            case 'b':
+                if (this.rightStrideInput.value === 1) {
+                    this.rightStrideInput.value = this.getDefaultStride('r');
+                }
+                if (this.downStrideInput.value === 1) {
+                    this.downStrideInput.value = this.getDefaultStride('d');
+                }
+                this.downStrideInput.enabled = true;
+                this.downStrideInput.minimum = 1;
+                this.rightStrideInput.enabled = true;
+                this.rightStrideInput.minimum = 1;
+                this.config.strideD = this.downStrideInput.value;
+                this.config.strideR = this.rightStrideInput.value;
+                this.rightStrideInput.toolTip = this.rightStrideLabel.text;
+                this.downStrideInput.toolTip = this.downStrideLabel.text;
+                break;
         }
     }
+
     addStrideInput() {
-        const defaultStride = this.getDefaultStride();
-        const maxStride = this.getMaxStride();
+        const defaultStrideR = this.getDefaultStride('r');
+        const defaultStrideD = this.getDefaultStride('d');
+        const maxStrideR = this.getMaxStride('r');
+        const maxStrideD = this.getMaxStride('d');
 
         this.dialog.addHeading("Enter the stride. This represents the number of tiles to advance between each animation "
             + "frame (in the direction specified in the previous step).\n"
             + "The value defaulted below is a best guess based on the selection, but may require adjustment depending on how "
             + "the tileset is laid out.", true);
         this.rightStrideLabel = this.dialog.addLabel("Stride (Right)");
-        this.rightStrideInput = this.dialog.addNumberInput("", defaultStride);
+        this.rightStrideInput = this.dialog.addNumberInput("", defaultStrideR);
         this.rightStrideInput.minimum = 1;
         this.rightStrideInput.decimals = 0;
-        this.rightStrideInput.maximum = maxStride;
+        this.rightStrideInput.maximum = maxStrideR;
         this.rightStrideInput.valueChanged.connect((newValue)=>{
             this.config.strideR = this.rightStrideInput.value;
         });
         this.config.strideR = this.rightStrideInput.value;
         this.downStrideLabel = this.dialog.addLabel("Stride (Down)");
-        this.downStrideInput = this.dialog.addNumberInput("", defaultStride);
+        this.downStrideInput = this.dialog.addNumberInput("", defaultStrideD);
         this.downStrideInput.minimum = 1;
         this.downStrideInput.decimals = 0;
-        this.downStrideInput.maximum = maxStride;
+        this.downStrideInput.maximum = maxStrideD;
         this.downStrideInput.valueChanged.connect((newValue)=>{
             this.config.strideD = this.downStrideInput.value;
         });
         this.config.strideD = this.downStrideInput.value;
-        this.updateStrideInputsEnabled();
+        this.updateStrideInputs();
     }
 
 
-    getDefaultStride() {
+    getDefaultStride(direction) {
         if (!this.isSelectionRectangular()) {
             return 1;
         }
         const extent = this.getSelectionExtent();
-        return this.config.direction === 'd' ? extent.height : extent.width;
+        return direction === 'd' ? extent.height : extent.width;
     }
 
-    getMaxStride() {
+    getMaxStride(direction) {
         const tileset = tiled.activeAsset;
         const extent = this.getSelectionExtent();
-        if (this.config.direction === 'r' || this.config.direction === 'b') {
+        if (direction === 'r' || direction === 'b') {
             const numCols = this.getNumCols();
             const extentR = extent.x + extent.width;
             return numCols - extentR;
