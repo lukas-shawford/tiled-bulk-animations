@@ -36,7 +36,7 @@ class BulkAnimationEditor {
 
     createAnimations() {
         const tileset = tiled.activeAsset;
-        const { selectedTiles, direction, stride, strideR, strideD, frames, duration } = this.config;
+        const { selectedTiles, direction, strideR, strideD, frames, duration } = this.config;
         for (const tile of selectedTiles) {
             // HACK: Loop over all tiles to work around an issue with some tiles being occasionally null in the
             // tileset.tiles array. Not sure why the issue occurs - likely has something to do with the fact that
@@ -50,7 +50,7 @@ class BulkAnimationEditor {
                     + "again, and if the problem persists, please submit an issue.", this.title);
             }
 
-            tile.frames = this.getFrames(tile, direction, stride, strideR, strideD, frames, duration);
+            tile.frames = this.getFrames(tile, direction, strideR, strideD, frames, duration);
         }
         if (this.dialog){
             this.dialog.accept();
@@ -150,27 +150,27 @@ class BulkAnimationEditor {
         this.dialog.show();
     }
 
-    validateConfig(){
-
+    validateConfig() {
         const frames =  this.config.frames;
+        const maxFrames = this.getMaxFrames();
         if (isNaN(frames) || frames < 0) {
             tiled.alert(`Invalid number of frames '${this.config.frames}'. Try again or press Cancel to abort.`, this.title);
             return false;
         }
-        if (frames !== 0 && frames > this.config.maxFrames) {
-            tiled.alert(`Invalid number of frames. Based on the size of the tileset, the maximum number of frames is ${this.config.maxFrames}.`
-                +".\n\nPlease try again, or press Cancel to abort.", this.title);
+        if (frames !== 0 && frames > maxFrames) {
+            tiled.alert(`Invalid number of frames. Based on the size of the tileset, the maximum number of frames is: ${maxFrames}.`
+                +"\n\nPlease try again, or press Cancel to abort.", this.title);
             return false;
         }
-
-        const stride = this.config.direction == 'd'?  this.config.strideD: this.config.strideR;
+        const stride = this.config.direction === 'd' ?  this.config.strideD : this.config.strideR;
+        const maxStride = this.getMaxStride();
         if (stride <= 0) {
             tiled.alert("Stride should be greater than zero.", this.title);
             return false;
         }
-        if (this.config.stride > this.config.maxStride) {
+        if (stride > maxStride) {
             tiled.alert("Invalid stride. Based on the size of the tileset and the specified direction, the maximum stride is: "
-                + this.config.maxStride + ".\n\nPlease try again, or press Cancel to abort.", this.title);
+                + maxStride + ".\n\nPlease try again, or press Cancel to abort.", this.title);
             return false;
         }
         return true;
@@ -214,8 +214,6 @@ class BulkAnimationEditor {
                 default:
             }
             this.directionHeading.text = `Current Direction: ${newText}\n${directionToHeading[this.config.direction]}`;
-            this.config.defaultStride = this.getDefaultStride();
-            this.config.maxStride = this.getMaxStride();
             this.updateStrideInputsEnabled();
             if (this.framesInput.value === 0) {
                 this.config.frames = this.getMaxFrames()
@@ -223,22 +221,30 @@ class BulkAnimationEditor {
         }.bind(this));
     }
     updateStrideInputsEnabled(){
-        if (this.config.direction == "r"){
+        if (this.config.direction == "r") {
             this.downStrideInput.enabled = false;
             this.downStrideInput.toolTip = 'Disabled since the current direction is Right';
+            this.downStrideInput.minimum = 0;
+            this.downStrideInput.value = 0;
+
             this.rightStrideInput.enabled = true;
+            this.rightStrideInput.minimum = 1;
             this.rightStrideInput.value = this.getDefaultStride();
-            this.downStrideInput.value = 1;
             this.rightStrideInput.toolTip = this.rightStrideLabel.text;
+
             this.config.strideR = this.rightStrideInput.value;
-        } else if (this.config.direction == "d"){
-            this.downStrideInput.enabled = true;
-            this.rightStrideInput.value = 1;
-            this.downStrideInput.value = this.getDefaultStride();
+        } else if (this.config.direction == "d") {
             this.rightStrideInput.enabled = false;
             this.rightStrideInput.toolTip = 'Disabled since the current direction is Down';
-            this.config.strideD = this.downStrideInput.value;
+            this.rightStrideInput.minimum = 0;
+            this.rightStrideInput.value = 0;
+
+            this.downStrideInput.enabled = true;
+            this.downStrideInput.minimum = 1;
+            this.downStrideInput.value = this.getDefaultStride();
             this.downStrideInput.toolTip = this.downStrideLabel.text;
+
+            this.config.strideD = this.downStrideInput.value;
         } else {
             if (this.rightStrideInput.value == 1){
                 this.rightStrideInput.value = this.getDefaultStride();
@@ -247,7 +253,9 @@ class BulkAnimationEditor {
                 this.downStrideInput.value = this.getDefaultStride();
             }
             this.downStrideInput.enabled = true;
+            this.downStrideInput.minimum = 1;
             this.rightStrideInput.enabled = true;
+            this.rightStrideInput.minimum = 1;
             this.config.strideD = this.downStrideInput.value;
             this.config.strideR = this.rightStrideInput.value;
             this.rightStrideInput.toolTip = this.rightStrideLabel.text;
@@ -256,7 +264,7 @@ class BulkAnimationEditor {
     }
     addStrideInput() {
         this.defaultStride = this.getDefaultStride();
-        this.config.maxStride = this.getMaxStride();
+        const maxStride = this.getMaxStride();
         this.config.stride = this.defaultStride;
 
         this.dialog.addHeading("Enter the stride. This represents the number of tiles to advance between each animation "
@@ -267,7 +275,7 @@ class BulkAnimationEditor {
         this.rightStrideInput = this.dialog.addNumberInput("", this.defaultStride);
         this.rightStrideInput.minimum = 1;
         this.rightStrideInput.decimals = 0;
-        this.rightStrideInput.maximum = this.config.maxStride;
+        this.rightStrideInput.maximum = maxStride;
         this.rightStrideInput.valueChanged.connect((newValue)=>{
             this.config.strideR = this.rightStrideInput.value;
         });
@@ -276,7 +284,7 @@ class BulkAnimationEditor {
         this.downStrideInput = this.dialog.addNumberInput("", this.defaultStride);
         this.downStrideInput.minimum = 1;
         this.downStrideInput.decimals = 0;
-        this.downStrideInput.maximum = this.config.maxStride;
+        this.downStrideInput.maximum = maxStride;
         this.downStrideInput.valueChanged.connect((newValue)=>{
             this.config.strideD = this.downStrideInput.value;
         });
@@ -307,6 +315,19 @@ class BulkAnimationEditor {
         }
     }
 
+    getIdStride() {
+        const { direction, strideR, strideD } = this.config
+        const numCols = this.getNumCols();
+        switch (direction) {
+            case 'r':
+                return strideR;
+            case 'd':
+                return numCols * strideD;
+            case 'b':
+                return strideR + (numCols * strideD);
+        }
+    }
+
     addFramesInput() {
         const maxFrames = this.getMaxFrames();
         this.dialog.addHeading("Enter the number of frames in each animation. Enter 0 if the animation continues "
@@ -328,19 +349,25 @@ class BulkAnimationEditor {
         if (direction === 'r') {
             const numCols = this.getNumCols();
             const extentR = extent.x + extent.width;
-            return 1 + Math.floor((numCols - extentR) / this.config.strideR);
+            return this.config.strideR === 0
+                ? 0
+                : 1 + Math.floor((numCols - extentR) / this.config.strideR);
         }
         else if (direction === 'b') {
             const numCols = this.getNumCols();
             const extentR = extent.x + extent.width;
             const numRows = this.getNumRows();
             const extentB = extent.y + extent.height;
-            return (1 + Math.floor((numCols - extentR) / this.config.strideR))*(1 + Math.floor((numRows - extentB) / this.config.strideD));
+            return this.config.strideR === 0 || this.config.strideD === 0
+                ? 0
+                : (1 + Math.floor((numCols - extentR) / this.config.strideR))*(1 + Math.floor((numRows - extentB) / this.config.strideD));
         }
         if (direction === 'd') {
             const numRows = this.getNumRows();
             const extentB = extent.y + extent.height;
-            return 1 + Math.floor((numRows - extentB) / this.config.strideD);
+            return this.config.strideD === 0
+                ? 0
+                : 1 + Math.floor((numRows - extentB) / this.config.strideD);
         }
     }
 
@@ -458,12 +485,10 @@ class BulkAnimationEditor {
         return (extent.width == extent.height);
     }
 
-    getFrames(tile, direction, stride, strideR, strideD, maxFrames, duration) {
+    getFrames(tile, direction, strideR, strideD, maxFrames, duration) {
         const frames = [];
         const tileset = tiled.activeAsset;
-        const numCols = this.getNumCols();
-        const idStride = direction === 'd' ? numCols * stride : stride;
-        const extent = this.getSelectionExtent();
+        const idStride = this.getIdStride();
         let tileIndex = tileset.tiles.indexOf(tile);
         if (tileIndex < 0) {
             throw new Error("Tile not found in tileset");
@@ -475,11 +500,7 @@ class BulkAnimationEditor {
                 tileId: frameTile.id,
                 duration
             });
-            if (direction === 'b' && frames.length % (1 + Math.floor((numCols - (extent.x + extent.width)) / strideR)) === 0) {
-                tileIndex += (numCols * strideD) - (numCols-strideR);
-            } else {
-                tileIndex += idStride;
-            }
+            tileIndex += idStride;
         }
         return frames;
     }
