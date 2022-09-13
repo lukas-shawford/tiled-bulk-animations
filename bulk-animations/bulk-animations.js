@@ -263,16 +263,15 @@ class BulkAnimationEditor {
         }
     }
     addStrideInput() {
-        this.defaultStride = this.getDefaultStride();
+        const defaultStride = this.getDefaultStride();
         const maxStride = this.getMaxStride();
-        this.config.stride = this.defaultStride;
 
         this.dialog.addHeading("Enter the stride. This represents the number of tiles to advance between each animation "
             + "frame (in the direction specified in the previous step).\n"
             + "The value defaulted below is a best guess based on the selection, but may require adjustment depending on how "
             + "the tileset is laid out.", true);
         this.rightStrideLabel = this.dialog.addLabel("Stride (Right)");
-        this.rightStrideInput = this.dialog.addNumberInput("", this.defaultStride);
+        this.rightStrideInput = this.dialog.addNumberInput("", defaultStride);
         this.rightStrideInput.minimum = 1;
         this.rightStrideInput.decimals = 0;
         this.rightStrideInput.maximum = maxStride;
@@ -281,7 +280,7 @@ class BulkAnimationEditor {
         });
         this.config.strideR = this.rightStrideInput.value;
         this.downStrideLabel = this.dialog.addLabel("Stride (Down)");
-        this.downStrideInput = this.dialog.addNumberInput("", this.defaultStride);
+        this.downStrideInput = this.dialog.addNumberInput("", defaultStride);
         this.downStrideInput.minimum = 1;
         this.downStrideInput.decimals = 0;
         this.downStrideInput.maximum = maxStride;
